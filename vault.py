@@ -53,20 +53,31 @@ def setup_password():
     print("Master password created successfully!")
     
 def login():
-    password = input("Enter master password: ")
+    attempt_number=1
+    max_attempts=3
+    attempts = 3
 
-    entered_hash = hash_password(password)
+    while attempts > 0:
 
-    with open("data/password.txt", "r") as file:
-        stored_hash = file.read().strip()
+        print(f"\nAttempt: {attempt_number}/{max_attempts}")
+        attempt_number+=1
+        password = input("Enter master password: ")
 
-    if entered_hash == stored_hash:
-        print("Access Granted!")
-        return True
+        entered_hash = hash_password(password)
 
-    else:
-        print("Access Denied!")
-        return False
+        with open("data/password.txt", "r") as file:
+            stored_hash = file.read().strip()
+
+        if entered_hash == stored_hash:
+            print("Access Granted!")
+            return True
+
+        else:
+            attempts -= 1
+            print("Access Denied!")
+
+    print("Too many failed attempts. Exiting.")
+    return False
     
 def password_exists():
     return (
