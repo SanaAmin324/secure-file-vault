@@ -108,12 +108,16 @@ def view_secrets():
 
     try:
         with open("data/notes.txt", "r") as file:
-            data = file.read()
+            lines = file.readlines()
 
-            if data.strip() == "":
+            if not lines:
                 print("No secrets found.")
-            else:
-                print(data)
+                return
+
+            for line in lines:
+                encrypted_line = line.strip()
+                decrypted_line = decrypt_data(encrypted_line)
+                print(decrypted_line)
 
     except FileNotFoundError:
         print("No file found. Add a secret first.")
@@ -138,9 +142,17 @@ def main():
             print("Invalid choice. Try again.")
             
 
-if login():
+if __name__ == "__main__":
 
-    if not key_exists():
-        generate_key()
+    if not password_exists():
+        setup_password()
 
-    main()
+    if login():
+
+        if not key_exists():
+            generate_key()
+
+        main()
+
+    else:
+        print("Exiting program.")
