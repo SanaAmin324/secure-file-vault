@@ -1,8 +1,44 @@
 import hashlib
 import os
+from cryptography.fernet import Fernet
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
+
+def generate_key():
+    key = Fernet.generate_key()
+
+    with open("data/key.key", "wb") as file:
+        file.write(key)
+
+    print("Encryption key generated successfully!")
+    
+def key_exists():
+    return (
+        os.path.exists("data/key.key")
+        and os.path.getsize("data/key.key") > 0
+    )
+    
+def load_key():
+    with open("data/key.key", "rb") as file:
+        return file.read()
+    
+def encrypt_data(data):
+    key = load_key()
+
+    fernet = Fernet(key)
+
+    encrypted_data = fernet.encrypt(data.encode())
+
+    return encrypted_data.decode()
+
+def decrypt_data(encrypted_text):
+    key = load_key()
+    fernet = Fernet(key)
+
+    decrypted_data = fernet.decrypt(encrypted_text.encode())
+
+    return decrypted_data.decode()
 
 def setup_password():
     print("\n=== FIRST TIME SETUP ===")
@@ -48,10 +84,12 @@ def menu():
 def add_secret():
     secret = input("\nEnter your secret: ")
 
-    with open("data/notes.txt", "a") as file:
-        file.write(secret + "\n")
+    encrypted_secret = encrypt_data(secret)
 
-    print("Secret saved successfully!")
+    with open("data/notes.txt", "a") as file:
+        file.write(encrypted_secret + "\n")
+
+    print("Secret encrypted and saved successfully!")
     
     
 def view_secrets():
@@ -89,12 +127,9 @@ def main():
             print("Invalid choice. Try again.")
             
 
-if __name__ == "__main__":
+if login():
 
-    if not password_exists():
-        setup_password()
+    if not key_exists():
+        generate_key()
 
-    if login():
-        main()
-    else:
-        print("Exiting program.")
+    main()
