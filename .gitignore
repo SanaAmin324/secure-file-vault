@@ -1,0 +1,8 @@
+.venv/
+
+data/password.txt
+data/key.key
+data/notes.txt
+data/activity.log
+
+__pycache__/
