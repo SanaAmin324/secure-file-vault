@@ -48,17 +48,60 @@ def decrypt_data(encrypted_text):
 
     return decrypted_data.decode()
 
+def is_strong_password(password):
+
+    has_upper = False
+    has_lower = False
+    has_digit = False
+    has_special = False
+
+    for char in password:
+
+        if char.isupper():
+            has_upper = True
+
+        elif char.islower():
+            has_lower = True
+
+        elif char.isdigit():
+            has_digit = True
+
+        elif not char.isalnum():
+            has_special = True
+
+    return (
+        len(password) >= 8
+        and has_upper
+        and has_lower
+        and has_digit
+        and has_special
+    )
+
 def setup_password():
     print("\n=== FIRST TIME SETUP ===")
 
-    password = input("Create a master password: ")
+    while True:
 
-    hashed_password = hash_password(password)
+        password = input("Create a master password: ")
 
-    with open("data/password.txt", "w") as file:
-        file.write(hashed_password)
+        if is_strong_password(password):
 
-    print("Master password created successfully!")
+            hashed_password = hash_password(password)
+
+            with open("data/password.txt", "w") as file:
+                file.write(hashed_password)
+
+            print("Master password created successfully!")
+            break
+
+        else:
+            print("\nPassword is too weak.")
+            print("Requirements:")
+            print("- At least 8 characters")
+            print("- At least 1 uppercase letter")
+            print("- At least 1 lowercase letter")
+            print("- At least 1 digit")
+            print("- At least 1 special character")
     
 def login():
     attempt_number=1
@@ -148,6 +191,8 @@ def main():
 
         else:
             print("Invalid choice. Try again.")
+            
+
             
 
 if __name__ == "__main__":
