@@ -5,7 +5,7 @@ from datetime import datetime
 
 def write_log(action):
 
-    timestamp = datetime.now()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     with open("data/activity.log", "a") as file:
         file.write(f"{timestamp} - {action}\n")
@@ -125,6 +125,7 @@ def login():
 
         else:
             attempts -= 1
+            write_log("FAILED LOGIN")
             print("Access Denied!")
 
     print("Too many failed attempts. Exiting.")
@@ -135,12 +136,34 @@ def password_exists():
         os.path.exists("data/password.txt")
         and os.path.getsize("data/password.txt") > 0
     )
+    
+def view_logs():
+
+    print("\n===== ACTIVITY LOGS =====\n")
+
+    try:
+
+        with open("data/activity.log", "r") as file:
+
+            logs = file.read()
+
+            if logs.strip() == "":
+                print("No logs found.")
+
+            else:
+                print(logs)
+
+    except FileNotFoundError:
+        print("No log file found.")
 
 def menu():
     print("\n=====^v^=== SECURE FILE VAULT ===^v^=====")
     print("1. Add Secret")
-    print("2. View Secrets")
-    print("3. Exit")
+    print("2. View All Secrets")
+    print("3. Search Secrets")
+    print("4. Change Master Password")
+    print("5. View Activity Logs")
+    print("6. Exit")
     
     
 def add_secret():
@@ -151,6 +174,7 @@ def add_secret():
     with open("data/notes.txt", "a") as file:
         file.write(encrypted_secret + "\n")
 
+    write_log("SECRET ADDED")
     print("Secret encrypted and saved successfully!")
     
     
@@ -165,6 +189,7 @@ def view_secrets():
                 print("No secrets found.")
                 return
 
+            write_log("SECRETS VIEWED")
             for line in lines:
                 encrypted_line = line.strip()
                 decrypted_line = decrypt_data(encrypted_line)
@@ -172,6 +197,67 @@ def view_secrets():
 
     except FileNotFoundError:
         print("No file found. Add a secret first.")
+        
+    
+def change_master_password():
+
+    print("\n===== CHANGE MASTER PASSWORD =====")
+
+    # Step 1: verify old password
+    old_password = input("Enter current password: ")
+    old_hash = hash_password(old_password)
+
+    with open("data/password.txt", "r") as file:
+        stored_hash = file.read().strip()
+
+    if old_hash != stored_hash:
+        write_log("FAILED PASSWORD CHANGE")
+        print("Incorrect password. Access denied.")
+        return
+
+    # Step 2: set new password
+    while True:
+        new_password = input("Enter new master password: ")
+
+        if is_strong_password(new_password):
+
+            new_hash = hash_password(new_password)
+
+            with open("data/password.txt", "w") as file:
+                file.write(new_hash)
+
+            write_log("MASTER PASSWORD CHANGED")
+            print("Master password updated successfully!")
+            break
+
+        else:
+            print("\nPassword too weak. Try again.")
+            
+def search_secrets():
+    print("\n===== SEARCH SECRETS =====")
+
+    keyword = input("Enter keyword to search: ").lower()
+    
+
+    try:
+        with open("data/notes.txt", "r") as file:
+            lines = file.readlines()
+
+            found = False
+
+            write_log("SECRET SEARCH PERFORMED")
+            for line in lines:
+                decrypted = decrypt_data(line.strip())
+
+                if keyword in decrypted.lower():
+                    print("🔎 Found:", decrypted)
+                    found = True
+
+            if not found:
+                print("No matching secrets found.")
+
+    except FileNotFoundError:
+        print("No secrets file found.")
         
 
 def main():
@@ -184,11 +270,20 @@ def main():
 
         elif choice == "2":
             view_secrets()
-
+            
         elif choice == "3":
+            search_secrets()
+
+        elif choice == "4":
+            change_master_password()
+
+        elif choice == "5":
+            view_logs()
+
+        elif choice == "6":
             print("Goodbye!")
             break
-
+ 
         else:
             print("Invalid choice. Try again.")
             
@@ -204,7 +299,7 @@ if __name__ == "__main__":
         generate_key()
 
     if login():
-        write_log("TEST LOG")
+        write_log("LOGIN SUCCESS")
         main()
 
     else:
