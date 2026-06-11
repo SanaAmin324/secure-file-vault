@@ -1,6 +1,14 @@
 import hashlib
 import os
 from cryptography.fernet import Fernet
+from datetime import datetime
+
+def write_log(action):
+
+    timestamp = datetime.now()
+
+    with open("data/activity.log", "a") as file:
+        file.write(f"{timestamp} - {action}\n")
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -147,11 +155,11 @@ if __name__ == "__main__":
     if not password_exists():
         setup_password()
 
+    if not key_exists():
+        generate_key()
+
     if login():
-
-        if not key_exists():
-            generate_key()
-
+        write_log("TEST LOG")
         main()
 
     else:
