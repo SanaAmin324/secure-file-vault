@@ -2,6 +2,27 @@ import hashlib
 import os
 from cryptography.fernet import Fernet
 from datetime import datetime
+import base64
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+
+
+def derive_key(password):
+
+    salt = load_salt()
+
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,
+    )
+
+    key = base64.urlsafe_b64encode(
+        kdf.derive(password.encode())
+    )
+
+    return key
 
 def write_log(action):
 
@@ -47,6 +68,18 @@ def decrypt_data(encrypted_text):
     decrypted_data = fernet.decrypt(encrypted_text.encode())
 
     return decrypted_data.decode()
+
+def generate_salt():
+    salt = os.urandom(16)
+
+    with open("data/salt.bin", "wb") as file:
+        file.write(salt)
+
+    print("Salt generated successfully!")
+    
+def load_salt():
+    with open("data/salt.bin", "rb") as file:
+        return file.read()
 
 def is_strong_password(password):
 
@@ -292,6 +325,9 @@ def main():
 
 if __name__ == "__main__":
 
+    print("Salt:", load_salt().hex())
+    print(derive_key("MyPassword123!"))
+    
     if not password_exists():
         setup_password()
 
