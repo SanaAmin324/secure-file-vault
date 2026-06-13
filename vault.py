@@ -1,342 +1,327 @@
-import hashlib
 import os
-from cryptography.fernet import Fernet
-from datetime import datetime
+import hashlib
 import base64
+import hmac
+import time
+from datetime import datetime
+
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
-def derive_key(password):
+# =========================
+# CONFIG
+# =========================
+DATA_DIR = "data"
+PASSWORD_FILE = f"{DATA_DIR}/password.txt"
+SALT_FILE = f"{DATA_DIR}/salt.bin"
+NOTES_FILE = f"{DATA_DIR}/notes.txt"
+LOG_FILE = f"{DATA_DIR}/activity.log"
+LOCK_FILE = f"{DATA_DIR}/lock.txt"
 
+PBKDF2_ITERATIONS = 100000
+
+
+# =========================
+# SETUP
+# =========================
+def ensure_data_dir():
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
+
+
+# =========================
+# LOGGING (UPGRADED)
+# =========================
+def write_log(action, level="INFO"):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, "a") as f:
+        f.write(f"[{level}] {timestamp} - {action}\n")
+
+
+# =========================
+# SALT MANAGEMENT
+# =========================
+def generate_salt():
+    salt = os.urandom(16)
+    with open(SALT_FILE, "wb") as f:
+        f.write(salt)
+    return salt
+
+
+def load_salt():
+    if not os.path.exists(SALT_FILE):
+        return generate_salt()
+    with open(SALT_FILE, "rb") as f:
+        return f.read()
+
+
+# =========================
+# KEY DERIVATION
+# =========================
+def derive_key(password: str) -> bytes:
     salt = load_salt()
 
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
-        iterations=100000,
+        iterations=PBKDF2_ITERATIONS,
     )
 
-    key = base64.urlsafe_b64encode(
-        kdf.derive(password.encode())
-    )
+    return kdf.derive(password.encode())
 
-    return key
 
-def write_log(action):
-
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    with open("data/activity.log", "a") as file:
-        file.write(f"{timestamp} - {action}\n")
-
-def hash_password(password):
+# =========================
+# PASSWORD SECURITY
+# =========================
+def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
-def generate_key():
-    key = Fernet.generate_key()
 
-    with open("data/key.key", "wb") as file:
-        file.write(key)
-
-    print("Encryption key generated successfully!")
-    
-def key_exists():
-    return (
-        os.path.exists("data/key.key")
-        and os.path.getsize("data/key.key") > 0
-    )
-    
-def load_key():
-    with open("data/key.key", "rb") as file:
-        return file.read()
-    
-def encrypt_data(data):
-    key = load_key()
-
-    fernet = Fernet(key)
-
-    encrypted_data = fernet.encrypt(data.encode())
-
-    return encrypted_data.decode()
-
-def decrypt_data(encrypted_text):
-    key = load_key()
-    fernet = Fernet(key)
-
-    decrypted_data = fernet.decrypt(encrypted_text.encode())
-
-    return decrypted_data.decode()
-
-def generate_salt():
-    salt = os.urandom(16)
-
-    with open("data/salt.bin", "wb") as file:
-        file.write(salt)
-
-    print("Salt generated successfully!")
-    
-def load_salt():
-    with open("data/salt.bin", "rb") as file:
-        return file.read()
-
-def is_strong_password(password):
-
-    has_upper = False
-    has_lower = False
-    has_digit = False
-    has_special = False
-
-    for char in password:
-
-        if char.isupper():
-            has_upper = True
-
-        elif char.islower():
-            has_lower = True
-
-        elif char.isdigit():
-            has_digit = True
-
-        elif not char.isalnum():
-            has_special = True
-
+def is_strong_password(password: str) -> bool:
     return (
         len(password) >= 8
-        and has_upper
-        and has_lower
-        and has_digit
-        and has_special
+        and any(c.isupper() for c in password)
+        and any(c.islower() for c in password)
+        and any(c.isdigit() for c in password)
+        and any(not c.isalnum() for c in password)
     )
 
+
+# =========================
+# LOGIN LOCK SYSTEM
+# =========================
+def is_locked():
+    if not os.path.exists(LOCK_FILE):
+        return False
+
+    with open(LOCK_FILE, "r") as f:
+        unlock_time = float(f.read())
+
+    if time.time() < unlock_time:
+        print("System locked. Try again later.")
+        return True
+
+    return False
+
+
+def lock_system():
+    with open(LOCK_FILE, "w") as f:
+        f.write(str(time.time() + 30))  # 30 sec lock
+
+
+# =========================
+# SETUP PASSWORD
+# =========================
 def setup_password():
     print("\n=== FIRST TIME SETUP ===")
 
     while True:
+        password = input("Create master password: ")
 
-        password = input("Create a master password: ")
+        if not is_strong_password(password):
+            print("Weak password. Try again.")
+            continue
 
-        if is_strong_password(password):
+        with open(PASSWORD_FILE, "w") as f:
+            f.write(hash_password(password))
 
-            hashed_password = hash_password(password)
+        write_log("PASSWORD CREATED")
+        print("Master password set.")
+        return
 
-            with open("data/password.txt", "w") as file:
-                file.write(hashed_password)
 
-            print("Master password created successfully!")
-            break
-
-        else:
-            print("\nPassword is too weak.")
-            print("Requirements:")
-            print("- At least 8 characters")
-            print("- At least 1 uppercase letter")
-            print("- At least 1 lowercase letter")
-            print("- At least 1 digit")
-            print("- At least 1 special character")
-    
+# =========================
+# LOGIN
+# =========================
 def login():
-    attempt_number=1
-    max_attempts=3
+    if is_locked():
+        return None
+
     attempts = 3
 
     while attempts > 0:
+        print(f"\nAttempts remaining: {attempts}")
 
-        print(f"\nAttempt: {attempt_number}/{max_attempts}")
-        attempt_number+=1
         password = input("Enter master password: ")
-
         entered_hash = hash_password(password)
 
-        with open("data/password.txt", "r") as file:
-            stored_hash = file.read().strip()
+        with open(PASSWORD_FILE, "r") as f:
+            stored_hash = f.read().strip()
 
         if entered_hash == stored_hash:
-            print("Access Granted!")
-            return True
+            write_log("LOGIN SUCCESS", "SECURITY")
+            return password
 
-        else:
-            attempts -= 1
-            write_log("FAILED LOGIN")
-            print("Access Denied!")
+        attempts -= 1
+        write_log("FAILED LOGIN", "WARNING")
 
-    print("Too many failed attempts. Exiting.")
-    return False
-    
-def password_exists():
-    return (
-        os.path.exists("data/password.txt")
-        and os.path.getsize("data/password.txt") > 0
-    )
-    
-def view_logs():
+    lock_system()
+    write_log("SYSTEM LOCKED", "SECURITY")
+    print("Too many failed attempts.")
+    return None
 
-    print("\n===== ACTIVITY LOGS =====\n")
 
+# =========================
+# HMAC (INTEGRITY LAYER)
+# =========================
+def generate_hmac_key(password):
+    return hashlib.sha256((password + "HMAC").encode()).digest()
+
+
+def create_signature(data, password):
+    key = generate_hmac_key(password)
+    return hmac.new(key, data.encode(), hashlib.sha256).hexdigest()
+
+
+def verify_signature(data, signature, password):
+    key = generate_hmac_key(password)
+    expected = hmac.new(key, data.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+# =========================
+# ENCRYPTION
+# =========================
+def encrypt_data(data: str, password: str) -> str:
+    key = derive_key(password)
+
+    iv = os.urandom(12)
+    aesgcm = AESGCM(key)
+
+    ciphertext = aesgcm.encrypt(iv, data.encode(), None)
+
+    payload = base64.b64encode(iv + ciphertext).decode()
+
+    signature = create_signature(payload, password)
+
+    return f"{payload}::{signature}"
+
+
+def decrypt_data(record: str, password: str) -> str:
     try:
+        payload, signature = record.split("::")
 
-        with open("data/activity.log", "r") as file:
+        if not verify_signature(payload, signature, password):
+            return "[TAMPERED DATA DETECTED]"
 
-            logs = file.read()
+        raw = base64.b64decode(payload.encode())
 
-            if logs.strip() == "":
-                print("No logs found.")
+        iv = raw[:12]
+        ciphertext = raw[12:]
 
-            else:
-                print(logs)
+        key = derive_key(password)
+        aesgcm = AESGCM(key)
 
-    except FileNotFoundError:
-        print("No log file found.")
+        return aesgcm.decrypt(iv, ciphertext, None).decode()
 
-def menu():
-    print("\n=====^v^=== SECURE FILE VAULT ===^v^=====")
-    print("1. Add Secret")
-    print("2. View All Secrets")
-    print("3. Search Secrets")
-    print("4. Change Master Password")
-    print("5. View Activity Logs")
-    print("6. Exit")
-    
-    
-def add_secret():
-    secret = input("\nEnter your secret: ")
+    except Exception:
+        return "[DECRYPTION FAILED]"
 
-    encrypted_secret = encrypt_data(secret)
 
-    with open("data/notes.txt", "a") as file:
-        file.write(encrypted_secret + "\n")
+# =========================
+# FEATURES
+# =========================
+def add_secret(password):
+    secret = input("Enter secret: ")
+
+    encrypted = encrypt_data(secret, password)
+
+    with open(NOTES_FILE, "a") as f:
+        f.write(encrypted + "\n")
 
     write_log("SECRET ADDED")
-    print("Secret encrypted and saved successfully!")
-    
-    
-def view_secrets():
-    print("\n=====^v^=== STORED SECRETS ===^v^=====\n")
+    print("Saved securely.")
 
+
+def view_secrets(password):
     try:
-        with open("data/notes.txt", "r") as file:
-            lines = file.readlines()
+        with open(NOTES_FILE, "r") as f:
+            lines = f.readlines()
 
-            if not lines:
-                print("No secrets found.")
-                return
+        if not lines:
+            print("No secrets found.")
+            return
 
-            write_log("SECRETS VIEWED")
-            for line in lines:
-                encrypted_line = line.strip()
-                decrypted_line = decrypt_data(encrypted_line)
-                print(decrypted_line)
+        write_log("VIEW SECRETS")
+
+        for line in lines:
+            print("-", decrypt_data(line.strip(), password))
 
     except FileNotFoundError:
-        print("No file found. Add a secret first.")
-        
-    
-def change_master_password():
+        print("No file found.")
 
-    print("\n===== CHANGE MASTER PASSWORD =====")
 
-    # Step 1: verify old password
-    old_password = input("Enter current password: ")
-    old_hash = hash_password(old_password)
-
-    with open("data/password.txt", "r") as file:
-        stored_hash = file.read().strip()
-
-    if old_hash != stored_hash:
-        write_log("FAILED PASSWORD CHANGE")
-        print("Incorrect password. Access denied.")
-        return
-
-    # Step 2: set new password
-    while True:
-        new_password = input("Enter new master password: ")
-
-        if is_strong_password(new_password):
-
-            new_hash = hash_password(new_password)
-
-            with open("data/password.txt", "w") as file:
-                file.write(new_hash)
-
-            write_log("MASTER PASSWORD CHANGED")
-            print("Master password updated successfully!")
-            break
-
-        else:
-            print("\nPassword too weak. Try again.")
-            
-def search_secrets():
-    print("\n===== SEARCH SECRETS =====")
-
-    keyword = input("Enter keyword to search: ").lower()
-    
+def search_secrets(password):
+    keyword = input("Keyword: ").lower()
 
     try:
-        with open("data/notes.txt", "r") as file:
-            lines = file.readlines()
+        with open(NOTES_FILE, "r") as f:
+            lines = f.readlines()
 
-            found = False
+        found = False
+        write_log("SEARCH")
 
-            write_log("SECRET SEARCH PERFORMED")
-            for line in lines:
-                decrypted = decrypt_data(line.strip())
+        for line in lines:
+            text = decrypt_data(line.strip(), password)
 
-                if keyword in decrypted.lower():
-                    print("🔎 Found:", decrypted)
-                    found = True
+            if keyword in text.lower():
+                print("FOUND:", text)
+                found = True
 
-            if not found:
-                print("No matching secrets found.")
+        if not found:
+            print("No matches.")
 
     except FileNotFoundError:
-        print("No secrets file found.")
-        
+        print("No file found.")
 
-def main():
+
+# =========================
+# MENU
+# =========================
+def menu():
+    print("\n=== SECURE VAULT V9 ===")
+    print("1. Add Secret")
+    print("2. View Secrets")
+    print("3. Search")
+    print("4. Exit")
+
+
+def main(password):
     while True:
         menu()
-        choice = input("\nChoose an option: ")
+        choice = input("Choice: ")
 
         if choice == "1":
-            add_secret()
-
+            add_secret(password)
         elif choice == "2":
-            view_secrets()
-            
+            view_secrets(password)
         elif choice == "3":
-            search_secrets()
-
+            search_secrets(password)
         elif choice == "4":
-            change_master_password()
-
-        elif choice == "5":
-            view_logs()
-
-        elif choice == "6":
-            print("Goodbye!")
+            print("Goodbye")
             break
- 
         else:
-            print("Invalid choice. Try again.")
-            
+            print("Invalid")
 
-            
 
+# =========================
+# START
+# =========================
 if __name__ == "__main__":
+    ensure_data_dir()
 
-    print("Salt:", load_salt().hex())
-    print(derive_key("MyPassword123!"))
-    
-    if not password_exists():
+    if not os.path.exists(SALT_FILE):
+        generate_salt()
+
+    if not os.path.exists(PASSWORD_FILE):
         setup_password()
 
-    if not key_exists():
-        generate_key()
+    master_password = login()
 
-    if login():
-        write_log("LOGIN SUCCESS")
-        main()
-
+    if master_password:
+        main(master_password)
     else:
-        print("Exiting program.")
+        print("Exit")
